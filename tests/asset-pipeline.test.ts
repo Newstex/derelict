@@ -2,62 +2,66 @@ import { describe, it, expect } from 'vitest';
 import { AssetManifest, AssetType, PipelineStage } from '../src/assets/AssetPipeline';
 
 describe('AssetManifest', () => {
-    it('should register a new asset', () => {
-        const manifest = new AssetManifest();
-        const record = manifest.register('char-001', 'Scientist', AssetType.Character);
-        expect(record.id).toBe('char-001');
-        expect(record.name).toBe('Scientist');
-        expect(record.type).toBe(AssetType.Character);
-        expect(record.stage).toBe(PipelineStage.Constraints);
-    });
+  it('should register a new asset', () => {
+    const manifest = new AssetManifest();
+    const entry = manifest.register('Scientist', AssetType.Character);
+    expect(entry.name).toBe('Scientist');
+    expect(entry.type).toBe(AssetType.Character);
+    expect(entry.stage).toBe(PipelineStage.ImageSheet);
+  });
 
-    it('should advance through pipeline stages', () => {
-        const manifest = new AssetManifest();
-        manifest.register('char-002', 'Engineer', AssetType.Character);
-        expect(manifest.advanceStage('char-002')).toBe(true);
-        const record = manifest.getAsset('char-002');
-        expect(record!.stage).toBe(PipelineStage.ModelGeneration);
-    });
+  it('should advance through pipeline stages', () => {
+    const manifest = new AssetManifest();
+    const entry = manifest.register('Engineer', AssetType.Character);
+    manifest.advance(entry.id, PipelineStage.ModelGenerated);
+    const updated = manifest.get(entry.id);
+    expect(updated!.stage).toBe(PipelineStage.ModelGenerated);
+  });
 
-    it('should not advance past complete', () => {
-        const manifest = new AssetManifest();
-        manifest.register('char-003', 'Marine', AssetType.Character);
-        const stages = Object.values(PipelineStage);
-        for (let i = 0; i < stages.length - 1; i++) {
-            manifest.advanceStage('char-003');
-        }
-        expect(manifest.advanceStage('char-003')).toBe(false);
-    });
+  it('should not regress to an earlier stage', () => {
+    const manifest = new AssetManifest();
+    const entry = manifest.register('Marine', AssetType.Character);
+    manifest.advance(entry.id, PipelineStage.Rigged);
+    expect(() => manifest.advance(entry.id, PipelineStage.ImageSheet)).toThrow();
+  });
 
-    it('should get assets by stage', () => {
-        const manifest = new AssetManifest();
-        manifest.register('a1', 'Asset1', AssetType.Character);
-        manifest.register('a2', 'Asset2', AssetType.Prop);
-        manifest.advanceStage('a1');
-        const atModelGen = manifest.getByStage(PipelineStage.ModelGeneration);
-        expect(atModelGen.length).toBe(1);
-        expect(atModelGen[0].id).toBe('a1');
-    });
+  it('should get assets by stage', () => {
+    const manifest = new AssetManifest();
+    const e1 = manifest.register('Asset1', AssetType.Character);
+    manifest.register('Asset2', AssetType.Prop);
+    manifest.advance(e1.id, PipelineStage.ModelGenerated);
+    const atModelGen = manifest.byStage(PipelineStage.ModelGenerated);
+    expect(atModelGen.length).toBe(1);
+    expect(atModelGen[0].id).toBe(e1.id);
+  });
 
-    it('should set file path', () => {
-        const manifest = new AssetManifest();
-        manifest.register('a1', 'Asset1', AssetType.Environment);
-        expect(manifest.setFilePath('a1', '/assets/env/station.glb')).toBe(true);
-        expect(manifest.getAsset('a1')!.filePath).toBe('/assets/env/station.glb');
-    });
+  it('should get assets by type', () => {
+    const manifest = new AssetManifest();
+    manifest.register('Char1', AssetType.Character);
+    manifest.register('Prop1', AssetType.Prop);
+    manifest.register('Char2', AssetType.Character);
+    const chars = manifest.byType(AssetType.Character);
+    expect(chars.length).toBe(2);
+  });
 
-    it('should remove assets', () => {
-        const manifest = new AssetManifest();
-        manifest.register('a1', 'Asset1', AssetType.Character);
-        expect(manifest.count()).toBe(1);
-        manifest.remove('a1');
-        expect(manifest.count()).toBe(0);
-    });
+  it('should remove assets', () => {
+    const manifest = new AssetManifest();
+    const entry = manifest.register('Asset1', AssetType.Character);
+    expect(manifest.size).toBe(1);
+    manifest.remove(entry.id);
+    expect(manifest.size).toBe(0);
+  });
 
-    it('should return false for unknown asset operations', () => {
-        const manifest = new AssetManifest();
-        expect(manifest.advanceStage('unknown')).toBe(false);
-        expect(manifest.setFilePath('unknown', '/path')).toBe(false);
-        expect(manifest.getAsset('unknown')).toBeUndefined();
-    });
+  it('should return undefined for unknown asset lookups', () => {
+    const manifest = new AssetManifest();
+    expect(manifest.get('unknown')).toBeUndefined();
+  });
+
+  it('should support toJSON serialization', () => {
+    const manifest = new AssetManifest();
+    manifest.register('Asset1', AssetType.Character);
+    const json = manifest.toJSON();
+    expect(json.length).toBe(1);
+    expect(json[0].name).toBe('Asset1');
+  });
 });
