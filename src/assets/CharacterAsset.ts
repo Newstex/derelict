@@ -133,7 +133,7 @@ export class CharacterAsset {
    * Cross-fade to a named animation.
    *
    * If the name is unknown the call is a no-op (and returns false) so callers
-   * can guard with an `if (!playAnimation('Walk')) { /* missing clip */}`.
+   * can guard with an `if (!playAnimation('Walk')) { ... }` check for a missing clip.
    *
    * @param name animation clip name (must match a clip in the loaded .glb)
    * @returns true if the animation exists and was started, false otherwise
