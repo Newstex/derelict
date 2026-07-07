@@ -40,6 +40,15 @@ export class MainScene {
   /** Score — how many pickups collected. */
   private score = 0;
 
+  /** Enemy drones that chase the player. */
+  private drones: { mesh: THREE.Mesh; x: number; z: number; vx: number; vz: number; hp: number }[] = [];
+  private droneSpawnTimer = 0;
+  private readonly droneMaxCount = 5;
+  private readonly droneSpeed = 3.5;
+  private readonly droneDamageRadius = 1.0;
+  private readonly droneContactDamage = 15; // per second
+  private damageFlashTimer = 0;
+
   // Input state
   private keysDown = new Set<string>();
 
@@ -114,6 +123,10 @@ export class MainScene {
 
     // --- Oxygen pickups ---
     this.spawnOxygenPickups();
+
+    // --- Enemy drones ---
+    this.spawnDrone();
+    this.spawnDrone();
 
     // --- Input listeners ---
     this.bindInput();
@@ -213,6 +226,36 @@ export class MainScene {
   }
 
   // ----------------------------------------------------------
+  // Enemy Drones
+  // ----------------------------------------------------------
+
+  private spawnDrone(): void {
+    const geo = new THREE.SphereGeometry(0.4, 8, 6);
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0xff3344,
+      emissive: 0x660011,
+      emissiveIntensity: 0.6,
+      roughness: 0.4,
+      metalness: 0.6,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+
+    // Spawn at edge of map, away from player
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 18 + Math.random() * 6;
+    const x = Math.cos(angle) * dist;
+    const z = Math.sin(angle) * dist;
+    mesh.position.set(x, 1.0, z);
+    this.scene.add(mesh);
+
+    // Red glow light
+    const light = new THREE.PointLight(0xff3344, 0.5, 8);
+    mesh.add(light);
+
+    this.drones.push({ mesh, x, z, vx: 0, vz: 0, hp: 30 });
+  }
+
+  // ----------------------------------------------------------
   // Input
   // ----------------------------------------------------------
 
@@ -300,6 +343,37 @@ export class MainScene {
         setTimeout(() => this.respawnPickup(p), 5000);
       }
     }
+
+    // --- Drone AI: chase player, deal contact damage ---
+    this.droneSpawnTimer += dt;
+    if (this.droneSpawnTimer > 8 && this.drones.length < this.droneMaxCount) {
+      this.spawnDrone();
+      this.droneSpawnTimer = 0;
+    }
+
+    for (const d of this.drones) {
+      // Chase the player
+      const dx = this.player.x - d.x;
+      const dz = this.player.z - d.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist > 0.01) {
+        d.vx = (dx / dist) * this.droneSpeed;
+        d.vz = (dz / dist) * this.droneSpeed;
+      }
+      d.x += d.vx * dt;
+      d.z += d.vz * dt;
+      d.mesh.position.set(d.x, 1.0, d.z);
+      d.mesh.rotation.y += dt * 3;
+
+      // Contact damage
+      if (dist < this.droneDamageRadius + this.player.radius) {
+        this.player.takeDamage(this.droneContactDamage * dt);
+        this.hud.flashDamage();
+        this.damageFlashTimer = 0.3;
+      }
+    }
+
+    if (this.damageFlashTimer > 0) this.damageFlashTimer -= dt;
 
     // Update HUD
     this.hud.update({
