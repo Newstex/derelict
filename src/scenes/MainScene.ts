@@ -32,6 +32,14 @@ export class MainScene {
   /** World bounds (playable area). */
   private readonly bounds: BoundsCollider = { halfWidth: 25, halfDepth: 25 };
 
+  /** Oxygen pickups scattered around the map. */
+  private oxygenPickups: { mesh: THREE.Mesh; x: number; z: number; collected: boolean }[] = [];
+  private readonly pickupRadius = 1.2;
+  private pickupTimer = 0;
+
+  /** Score — how many pickups collected. */
+  private score = 0;
+
   // Input state
   private keysDown = new Set<string>();
 
@@ -104,6 +112,9 @@ export class MainScene {
     // --- Obstacles (for collision testing) ---
     this.createObstacles();
 
+    // --- Oxygen pickups ---
+    this.spawnOxygenPickups();
+
     // --- Input listeners ---
     this.bindInput();
     window.addEventListener('resize', this.onResize);
@@ -157,6 +168,48 @@ export class MainScene {
       this.scene.add(mesh);
       this.circleColliders.push({ x, z, radius: r });
     }
+  }
+
+  // ----------------------------------------------------------
+  // Oxygen Pickups
+  // ----------------------------------------------------------
+
+  private spawnOxygenPickups(): void {
+    const positions: Array<[number, number]> = [
+      [3, 3], [-3, -3], [15, 0], [-15, 0], [0, -15], [18, 18], [-18, -18], [10, -12], [-10, 12],
+    ];
+    for (const [x, z] of positions) {
+      const geo = new THREE.OctahedronGeometry(0.35, 0);
+      const mat = new THREE.MeshStandardMaterial({
+        color: 0x00ffe0,
+        emissive: 0x00ffe0,
+        emissiveIntensity: 0.8,
+        roughness: 0.3,
+        metalness: 0.5,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(x, 0.8, z);
+      this.scene.add(mesh);
+      this.oxygenPickups.push({ mesh, x, z, collected: false });
+    }
+  }
+
+  private respawnPickup(p: { mesh: THREE.Mesh; x: number; z: number; collected: boolean }): void {
+    // Random position within bounds, away from center
+    let nx = 0, nz = 0;
+    let tries = 0;
+    do {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 6 + Math.random() * 18;
+      nx = Math.cos(angle) * dist;
+      nz = Math.sin(angle) * dist;
+      tries++;
+    } while (tries < 10);
+    p.x = nx;
+    p.z = nz;
+    p.collected = false;
+    p.mesh.position.set(nx, 0.8, nz);
+    p.mesh.visible = true;
   }
 
   // ----------------------------------------------------------
@@ -219,8 +272,34 @@ export class MainScene {
 
     this.player.applyPosition(result.x, result.z);
 
-    // Slowly drain oxygen (atmospheric survival flavour)
-    this.player.consumeOxygen(0.2 * dt);
+    // Drain oxygen faster — creates survival pressure to seek pickups
+    this.player.consumeOxygen(1.5 * dt);
+
+    // Suffocation damage when oxygen hits zero
+    if (this.player.isSuffocating) {
+      this.player.takeDamage(3 * dt);
+    }
+
+    // Spin and bob oxygen pickups, check collection
+    this.pickupTimer += dt;
+    for (const p of this.oxygenPickups) {
+      if (p.collected) continue;
+      p.mesh.rotation.y += dt * 2;
+      p.mesh.position.y = 0.8 + Math.sin(this.pickupTimer * 2 + p.x) * 0.15;
+
+      const dx = this.player.x - p.x;
+      const dz = this.player.z - p.z;
+      if (Math.hypot(dx, dz) < this.pickupRadius + this.player.radius) {
+        p.collected = true;
+        p.mesh.visible = false;
+        this.player.restoreOxygen(35);
+        this.player.heal(5);
+        this.score++;
+        this.hud.showZoneLabel(`OXYGEN RECOVERED +35  SCORE: ${this.score}`);
+        // Respawn after 5 seconds
+        setTimeout(() => this.respawnPickup(p), 5000);
+      }
+    }
 
     // Update HUD
     this.hud.update({
